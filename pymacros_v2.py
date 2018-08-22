@@ -43,10 +43,10 @@ def play_recording(events):
     keys_down = []
 
     for event in events:
-        key = event[0]
-        if key == "":
+        if not "key" in event:
             pass
         else:
+            key = event["key"]
             kkey = None
             if len(key) != 1:
                 kkey = key_map[key]
@@ -57,13 +57,13 @@ def play_recording(events):
             with keyboard.pressed(*modifiers):
                 keyboard.touch(kkey or key, key in keys_down)
 
-            if key in keys_down:
+            if event["direction"] == "release":
                 keys_down.remove(key)
             else:
                 keys_down.append(key)
 
 
-        if len(event) > 1:
+        if "wait" in event:
             if stop_playing.is_set():
                 for key in keys_down:
                     kkey = None
@@ -74,7 +74,7 @@ def play_recording(events):
                 clear_playing()
                 return
             else:
-                time.sleep(event[1])
+                time.sleep(event["wait"])
 
     clear_playing()
 
@@ -101,32 +101,44 @@ def stop_recording():
     to_stop_recording.set()
     recordtext.set("Record ({})".format(record_key))
 
+def on_event(direction):
+    def on_event(key):
+        global events
+        global last_event_fired
+        global recording_keys_down
+        
+        cur_time = time.time()
 
-def on_event(key):
-    global events
-    global last_event_fired
-    cur_time = time.time()
+        if events == []:
+            events.append({})
 
-    if events == []:
-        events.append([""])
+        if key == Key.esc:
+            stop_recording()
+            return
 
-    if key == Key.esc:
-        stop_recording()
-        return
-    
-    events[-1].append(cur_time - last_event_fired)
-    try:
-        events.append([key.name])
-    except AttributeError:
-        events.append([key.char])
+        if direction == "press" and str(key) in recording_keys_down:
+            pass
+        else:    
+            events[-1]["wait"] = cur_time - last_event_fired
+            try:
+                events.append({"key": key.name, "direction": direction})
+            except AttributeError:
+                events.append({"key": key.char, "direction": direction})
+            if direction == "press":
+                recording_keys_down.append(str(key))
+            else:
+                recording_keys_down.remove(str(key))
 
-    last_event_fired = cur_time
+            last_event_fired = cur_time
+    return on_event
 
 to_stop_recording = threading.Event()
 
 def record():
     global events
     global last_event_fired
+    global recording_keys_down
+    
     events = []
     for x in range(wait_time, 0, -1):
         if to_stop_recording.is_set(): return
@@ -134,7 +146,8 @@ def record():
         time.sleep(1)
     recordtext.set("Recording...\n(ESC)")
     last_event_fired = time.time()
-    recording_thread = Listener(on_press=on_event, on_release=on_event)
+    recording_keys_down = []
+    recording_thread = Listener(on_press=on_event("press"), on_release=on_event("release"))
     recording_thread.start()
     to_stop_recording.wait()
     recording_thread.stop()
