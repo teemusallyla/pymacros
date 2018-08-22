@@ -12,14 +12,15 @@ for key in list(Key):
     key_map[key.name] = key
 
 modifier_keys = ["alt", "alt_l", "alt_r", "cmd", "cmd_r",
-                 "ctrl", "ctrl_l", "ctrl_r", "shift", "shift_r"]
+                 "ctrl", "ctrl_l", "ctrl_r", "shift", "shift_l", "shift_r"]
 
 is_playing = False
 is_recording = False
 play_key = "P"
 record_key = "R"
-wait_time = 5
+wait_time = 3
 stop_playing = threading.Event()
+record_file = "recording.txt"
 
 def clear_playing():
     global is_playing
@@ -89,10 +90,16 @@ def play_pressed():
     else:
         stop_playing.clear()
         is_playing = True
-        with open("last_record.txt") as f:
+        with open(record_file) as f:
             events = json.load(f)
         th = threading.Thread(target=play_recording, args=(events,))
         th.start()
+
+def stop_recording():
+    global is_recording
+    is_recording = False
+    to_stop_recording.set()
+    recordtext.set("Record ({})".format(record_key))
 
 
 def on_event(key):
@@ -102,6 +109,10 @@ def on_event(key):
 
     if events == []:
         events.append([""])
+
+    if key == Key.esc:
+        stop_recording()
+        return
     
     events[-1].append(cur_time - last_event_fired)
     try:
@@ -111,24 +122,23 @@ def on_event(key):
 
     last_event_fired = cur_time
 
-recording_thread = None
-stop_recording = threading.Event()
+to_stop_recording = threading.Event()
 
 def record():
     global events
     global last_event_fired
     events = []
     for x in range(wait_time, 0, -1):
-        if stop_recording.is_set(): return
+        if to_stop_recording.is_set(): return
         recordtext.set(x)
         time.sleep(1)
-    recordtext.set("Recording...")
+    recordtext.set("Recording...\n(ESC)")
     last_event_fired = time.time()
     recording_thread = Listener(on_press=on_event, on_release=on_event)
     recording_thread.start()
-    stop_recording.wait()
+    to_stop_recording.wait()
     recording_thread.stop()
-    with open("last_record.txt", "w+") as f:
+    with open(record_file, "w+") as f:
         json.dump(events, f)
 
     if playbtn["state"] == "disabled":
@@ -141,12 +151,10 @@ def record_pressed():
     if is_playing:
         play_pressed()
     if is_recording:
-        stop_recording.set()
-        is_recording = False
-        recordtext.set("Record ({})".format(record_key))
+        stop_recording()
     else:
         is_recording = True
-        stop_recording.clear()
+        to_stop_recording.clear()
         th = threading.Thread(target=record)
         th.start()
         
@@ -167,13 +175,13 @@ playbtn["command"] = play_pressed
 recordbtn = Button(mainframe, textvariable=recordtext)
 recordbtn["command"] = record_pressed
 
-if not "last_record.txt" in os.listdir():
+if not record_file in os.listdir():
     playbtn["state"] = "disabled"
 
 playbtn.grid(column=0, row=0, sticky=(N,S,W,E))
 recordbtn.grid(column=1, row=0, sticky=(N,S,E,W))
 
-playbtn["width"] = recordbtn["width"] = 10
+playbtn["width"] = recordbtn["width"] = 15
 playbtn["height"] = 4
 
 root.columnconfigure(0, weight=1)
