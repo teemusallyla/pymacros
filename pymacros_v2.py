@@ -20,7 +20,7 @@ play_key = "P"
 record_key = "R"
 wait_time = 3
 stop_playing = threading.Event()
-record_file = "recording.txt"
+record_file = "recording2.txt"
 
 def clear_playing():
     global is_playing
@@ -40,41 +40,52 @@ def play_recording(events):
         time.sleep(1)
     playtext.set("Playing...")
 
-    keys_down = []
+    for x in range(50):
+        keys_down = []
 
-    for event in events:
-        if not "key" in event:
-            pass
+        for event in events:
+            if not "key" in event:
+                pass
+            else:
+                key = event["key"]
+                kkey = None
+                if len(key) != 1:
+                    kkey = key_map[key]
+
+                key = key.lower()
+                    
+                modifiers = [key_map[name] for name in keys_down if name in modifier_keys]
+                with keyboard.pressed(*modifiers):
+                    keyboard.touch(kkey or key, key in keys_down)
+
+                if event["direction"] == "release":
+                    keys_down.remove(key)
+                else:
+                    keys_down.append(key)
+
+
+            if "wait" in event:
+                if stop_playing.is_set():
+                    for key in keys_down:
+                        kkey = None
+                        if len(key) != 1:
+                            kkey = key_map[key]
+                        keyboard.release(kkey or key)
+                    stop_playing.clear()
+                    clear_playing()
+                    return
+                else:
+                    time.sleep(event["wait"])
+
+        if repeat_playing.is_set():
+            for x in range(wait_time, 0, -1):
+                if stop_playing.is_set(): break
+                playtext.set("Repeating in: " + str(x))
+                time.sleep(1)
+        if not repeat_playing.is_set() or stop_playing.is_set():
+            break
         else:
-            key = event["key"]
-            kkey = None
-            if len(key) != 1:
-                kkey = key_map[key]
-
-            key = key.lower()
-                
-            modifiers = [key_map[name] for name in keys_down if name in modifier_keys]
-            with keyboard.pressed(*modifiers):
-                keyboard.touch(kkey or key, key in keys_down)
-
-            if event["direction"] == "release":
-                keys_down.remove(key)
-            else:
-                keys_down.append(key)
-
-
-        if "wait" in event:
-            if stop_playing.is_set():
-                for key in keys_down:
-                    kkey = None
-                    if len(key) != 1:
-                        kkey = key_map[key]
-                    keyboard.release(kkey or key)
-                stop_playing.clear()
-                clear_playing()
-                return
-            else:
-                time.sleep(event["wait"])
+            playtext.set("Playing...")
 
     clear_playing()
 
@@ -170,7 +181,13 @@ def record_pressed():
         to_stop_recording.clear()
         th = threading.Thread(target=record)
         th.start()
-        
+
+repeat_playing = threading.Event()
+def check_pressed():
+    if repeat_playing.is_set():
+        repeat_playing.clear()
+    else:
+        repeat_playing.set()
 
 root = Tk()
 root.title("Pymacros")
@@ -195,7 +212,10 @@ playbtn.grid(column=0, row=0, sticky=(N,S,W,E))
 recordbtn.grid(column=1, row=0, sticky=(N,S,E,W))
 
 playbtn["width"] = recordbtn["width"] = 15
-playbtn["height"] = 4
+playbtn["height"] = 3
+
+check_box = Checkbutton(mainframe, text="Auto replay", command=check_pressed)
+check_box.grid(row=1, column=0, columnspan=2)
 
 root.columnconfigure(0, weight=1)
 root.rowconfigure(0, weight=1)

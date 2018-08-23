@@ -28,7 +28,6 @@ stop_playing = threading.Event()
 record_file = "recording.txt"
 
 def windows_keydown(vk):
-    print("pressing down: " + str(vk))
     win32api.keybd_event(vk, win32api.MapVirtualKey(vk, 0), 0, 0)
 
 def windows_keyup(vk):
@@ -52,60 +51,71 @@ def play_recording(events):
         time.sleep(1)
     playtext.set("Playing...")
 
-    keys_down = []
+    for x in range(50):
+        keys_down = []
+        windows_keys_down = []
 
-    for event in events:
-        if not "key" in event:
-            pass
-        else:
-            key = event["key"]
-            kkey = None
-            if len(key) != 1:
-                kkey = key_map[key]
+        for event in events:
+            if not "key" in event:
+                pass
+            else:
+                key = event["key"]
+                kkey = None
+                if len(key) != 1:
+                    kkey = key_map[key]
 
-            key = key.lower()
+                key = key.lower()
 
-            # modifiers are special keys and therefore handled by the win32api
-            #modifiers = [key_map[name] for name in keys_down if name in modifier_keys]
-            #with keyboard.pressed(*modifiers):
-            #    keyboard.touch(kkey or key, key in keys_down)
+                # modifiers are special keys and therefore handled by the win32api
+                #modifiers = [key_map[name] for name in keys_down if name in modifier_keys]
+                #with keyboard.pressed(*modifiers):
+                #    keyboard.touch(kkey or key, key in keys_down)
 
-            if event["direction"] == "release":
-                if kkey:
-                    windows_keyup(kkey.value.vk)
-                else:
-                    if Vkmap.has(key):
-                        windows_keyup(Vkmap.get_vk(key))
+                if event["direction"] == "release":
+                    if kkey:
+                        windows_keyup(kkey.value.vk)
+                        windows_keys_down.remove(kkey.value.vk)
                     else:
+                        if Vkmap.has(key):
+                            windows_keyup(Vkmap.get_vk(key))
+                            windows_keys_down.remove(Vkmap.get_vk(key))
+                        else:
+                            keyboard.release(key)
+                            keys_down.remove(key)
+                elif event["direction"] == "press":
+                    if kkey:
+                        windows_keydown(kkey.value.vk)
+                        windows_keys_down.append(kkey.value.vk)
+                    else:
+                        if Vkmap.has(key):
+                            windows_keydown(Vkmap.get_vk(key))
+                            windows_keys_down.append(Vkmap.get_vk(key))
+                        else:
+                            keyboard.press(key)
+                            keys_down.append(key)
+
+
+            if "wait" in event:
+                if stop_playing.is_set():
+                    for key in keys_down:
                         keyboard.release(key)
-            elif event["direction"] == "press":
-                if kkey:
-                    windows_keydown(kkey.value.vk)
+                    for key in windows_keys_down:
+                        windows_keyup(key)
+                    stop_playing.clear()
+                    clear_playing()
+                    return
                 else:
-                    if Vkmap.has(key):
-                        windows_keydown(Vkmap.get_vk(key))
-                    else:
-                        keyboard.press(key)
-                    
+                    time.sleep(event["wait"])
 
-            if event["direction"] == "release":
-                keys_down.remove(key)
-            else:
-                keys_down.append(key)
-
-
-        if "wait" in event:
-            if stop_playing.is_set():
-                for key in keys_down:
-                    kkey = None
-                    if len(key) != 1:
-                        kkey = key_map[key]
-                    keyboard.release(kkey or key)
-                stop_playing.clear()
-                clear_playing()
-                return
-            else:
-                time.sleep(event["wait"])
+        if repeat_playing.is_set():
+            for x in range(wait_time, 0, -1):
+                if stop_playing.is_set(): break
+                playtext.set("Repeating in: " + str(x))
+                time.sleep(1)
+        if not repeat_playing.is_set() or stop_playing.is_set():
+            break
+        else:
+            playtext.set("Playing...")
 
     clear_playing()
 
@@ -201,8 +211,15 @@ def record_pressed():
         to_stop_recording.clear()
         th = threading.Thread(target=record)
         th.start()
-        
 
+
+repeat_playing = threading.Event()
+def check_pressed():
+    if repeat_playing.is_set():
+        repeat_playing.clear()
+    else:
+        repeat_playing.set()
+        
 root = Tk()
 root.title("Pymacros")
 mainframe = Frame(root)
@@ -226,7 +243,10 @@ playbtn.grid(column=0, row=0, sticky=(N,S,W,E))
 recordbtn.grid(column=1, row=0, sticky=(N,S,E,W))
 
 playbtn["width"] = recordbtn["width"] = 15
-playbtn["height"] = 4
+playbtn["height"] = 3
+
+check_box = Checkbutton(mainframe, text="Auto replay", command=check_pressed)
+check_box.grid(row=1, column=0, columnspan=2)
 
 root.columnconfigure(0, weight=1)
 root.rowconfigure(0, weight=1)
